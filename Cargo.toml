@@ -1,0 +1,15 @@
+[package]
+authors = ["Erik Johnston <erikj@matrix.org>"]
+name = "viz-synapse"
+version = "0.1.0"
+
+[dependencies]
+hyper = "0.9.14"
+postgres = "0.13.3"
+serde = "0.8.19"
+serde_derive = "0.8.19"
+serde_json = "0.8.4"
+
+[dependencies.hyper-router]
+git = "https://github.com/erikjohnston/rust-hyper-router"
+optional = false

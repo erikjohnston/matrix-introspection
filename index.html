@@ -1,0 +1,97 @@
+
+<!doctype html>
+<html>
+<head>
+  <title>Matrix Room Explorer</title>
+
+  <script type="text/javascript" src="https://cdnjs.cloudflare.com/ajax/libs/vis/4.17.0/vis.min.js"></script>
+  <script type="text/javascript" src="https://code.jquery.com/jquery-3.1.1.min.js"></script>
+  <link href="https://cdnjs.cloudflare.com/ajax/libs/vis/4.17.0/vis.min.css" rel="stylesheet" type="text/css" />
+
+  <style type="text/css">
+    #mynetwork {
+      width: 800px;
+      height: 600px;
+      border: 1px solid lightgray;
+      float: right;
+      margin: 50px;
+    }
+
+  </style>
+</head>
+<body>
+
+<div id="container">
+    <div id="mynetwork"></div>
+    <div id="info_box">
+        <div id="info"></div>
+        <div id="state"></div>
+    </div>
+</div>
+
+<script type="text/javascript">
+    $.get( "http://localhost:12345/room/!hZmxiLcPyMohFQpcAl:matrix.org", function( data ) {
+        var event_map = {}
+
+        var nodes = [];
+        var edges = [];
+        for (var i = 0; i < data.length; i++) {
+            var row = data[i];
+
+            event_map[row.event_id] = row;
+            
+            nodes.push({
+                id: row.event_id,
+                label: row.event_id + "\ntype: " + row.etype + "\nstate_key: " + row.state_key,
+                group: row.state_group,
+            });
+
+            for (var j = 0; j < row.edges.length; j++) {
+                edges.push({
+                    from: row.event_id,
+                    to: row.edges[j],
+                    arrows: 'to',
+                });
+            } 
+        }
+
+        var nodes = new vis.DataSet(nodes);
+
+        // create a network
+        var container = document.getElementById('mynetwork');
+        var data = {
+            nodes: nodes,
+            edges: edges
+        };
+        var options = {
+            layout: {
+                hierarchical: {
+                    sortMethod: "directed"
+                }
+            },
+            interaction: { dragNodes :false },
+            physics: {
+                enabled: false
+            },
+        };
+        var network = new vis.Network(container, data, options);
+
+        network.on("click", function (params) {
+            if (params.nodes.length == 0) {
+                return;
+            }
+
+            var event_id = params.nodes[0];
+
+            $( "#info" ).html( "<pre>" + JSON.stringify(event_map[event_id], null, 4) + "</pre>" );
+            $( "#state" ).html( "" );
+
+            $.get( "http://localhost:12345/state/" + event_id, function( data ) {
+                $( "#state" ).html( "<pre>" + JSON.stringify(data, null, 4) + "</pre>" );
+            }, "json");
+        });
+    }, "json");
+</script>
+
+</body>
+</html>
