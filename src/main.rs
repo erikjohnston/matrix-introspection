@@ -1,5 +1,3 @@
-#![feature(proc_macro)]
-
 #[macro_use]
 extern crate hyper_router;
 extern crate hyper;
