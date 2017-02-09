@@ -17,7 +17,7 @@ use postgres::{Connection, TlsMode};
 
 
 fn get_conn() -> Connection {
-    Connection::connect("postgresql://<SOME_POSTGRES_CONNECT_STRING>/synapse",
+    Connection::connect("postgresql://erikj:foxmoose@localhost:5435/synapse",
                         TlsMode::None)
         .unwrap()
 }
@@ -55,6 +55,8 @@ fn room(params: Params, _: Request, mut res: Response) {
                    LEFT JOIN state_events USING (event_id)
                    INNER JOIN event_to_state_groups USING (event_id)
                    WHERE events.room_id = $1
+                   ORDER BY topological_ordering DESC
+                   LIMIT 100
                    "#,
                    &[&room_id])
             .expect("room sql query failed");
