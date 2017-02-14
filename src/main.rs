@@ -15,7 +15,7 @@ use postgres::{Connection, TlsMode};
 
 
 fn get_conn() -> Connection {
-    Connection::connect("postgresql://erikj:foxmoose@localhost:5435/synapse",
+    Connection::connect("postgresql://username:password@localhost:5435/synapse",
                         TlsMode::None)
         .unwrap()
 }
