@@ -13,16 +13,24 @@
       width: 800px;
       height: 600px;
       border: 1px solid lightgray;
-      float: right;
-      margin: 50px;
     }
 
+    #rhs {
+      margin: 50px;
+      float: right;
+    }
   </style>
 </head>
 <body>
 
 <div id="container">
-    <div id="mynetwork"></div>
+    <div id="rhs">
+        <form id="event_id_form">
+            <input id="event_id_input" type="text" placeholder="event_id"/>
+            <input type="submit"/>
+        </form>
+        <div id="mynetwork"></div>
+    </div>
     <div id="info_box">
         <div id="info"></div>
         <div id="state"></div>
@@ -82,14 +90,24 @@
             }
 
             var event_id = params.nodes[0];
+            showEventInfo(event_id);
+        });
 
+        $("#event_id_form").on("submit", function(e) {
+            e.preventDefault();
+            var event_id=$("#event_id_input").val();
+            network.focus(event_id);
+            showEventInfo(event_id);
+        });
+
+        function showEventInfo(event_id) {
             $( "#info" ).html( "<pre>" + JSON.stringify(event_map[event_id], null, 4) + "</pre>" );
             $( "#state" ).html( "" );
 
             $.get( "http://localhost:12345/state/" + event_id, function( data ) {
                 $( "#state" ).html( "<pre>" + JSON.stringify(data, null, 4) + "</pre>" );
             }, "json");
-        });
+        }
     }, "json");
 </script>
 
