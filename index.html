@@ -30,6 +30,24 @@
 </div>
 
 <script type="text/javascript">
+    // assign the given level to the node with the given event id, and walk the
+    // tree down the edges to ensure that each parent has a higher level.
+    function assignLevel(level, eventId, nodes, event_map) {
+        nodes.update({id: eventId, level: level});
+
+        for (const edge of event_map[eventId].edges) {
+            const parentNode = nodes.get(edge);
+            if (!parentNode) {
+                continue;
+            }
+            if (parentNode.level > level) {
+                // already has a higher level than us
+                continue;
+            }
+            assignLevel(level+1, edge, nodes, event_map);
+        }
+    }
+
     $.get( "http://localhost:12345/room/!cURbafjkfsMDVwdRDQ:matrix.org", function( data ) {
         var event_map = {}
 
@@ -56,6 +74,13 @@
         }
 
         var nodes = new vis.DataSet(nodes);
+
+        // assign levels to each node, based on their children
+        nodes.forEach(function(node) {
+            if (node.level === undefined) {
+                assignLevel(0, node.id, nodes, event_map);
+            }
+        });
 
         // create a network
         var container = document.getElementById('mynetwork');
