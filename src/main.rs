@@ -28,7 +28,7 @@ struct RoomRow {
     state_key: Option<String>,
     depth: i64,
     sender: String,
-    state_group: i64,
+    state_group: Option<i64>,
     content: serde_json::Value,
     edges: Vec<String>,
 }
@@ -51,7 +51,7 @@ fn room(params: Params, _: Request, mut res: Response) {
                    array(SELECT prev_event_id FROM event_edges WHERE is_state = false and event_id = events.event_id)
                    FROM events
                    LEFT JOIN state_events USING (event_id)
-                   INNER JOIN event_to_state_groups USING (event_id)
+                   LEFT JOIN event_to_state_groups USING (event_id)
                    WHERE events.room_id = $1
                    ORDER BY topological_ordering DESC
                    LIMIT 100
