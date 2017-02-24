@@ -19,10 +19,8 @@ use hyper_router::{Params, RouteHandler};
 use postgres::{Connection, TlsMode};
 
 
-
-fn get_conn() -> Connection {
-    Connection::connect("postgresql://username:password@localhost:5435/synapse",
-                        TlsMode::None)
+fn get_conn(connstr: &str) -> Connection {
+    Connection::connect(connstr, TlsMode::None)
         .unwrap()
 }
 
@@ -56,24 +54,29 @@ fn parse_request_uri(req_uri: RequestUri) -> hyper::Url {
     }
 }
 
-fn room(params: Params, req: Request, mut res: Response) {
-    let room_id = params.find("room_id").expect("room_id not in params");
+struct RoomHandler {
+    connection_string: String,
+}
 
-    /* please tell me there is an easier way to do this */
-    let uri = parse_request_uri(req.uri);
-    let qs: BTreeMap<_, _> = uri.query_pairs().collect();
+impl RouteHandler for RoomHandler {
+    fn handle(&self, params: Params, req: Request, mut res: Response) {
+        let room_id = params.find("room_id").expect("room_id not in params");
 
-    let max_depth: i64 = match qs.get("max_depth") {
-        Some(x) => x.parse().expect("unable to parse max_depth"),
-        _ => i64::max_value(),
-    };
+        /* please tell me there is an easier way to do this */
+        let uri = parse_request_uri(req.uri);
+        let qs: BTreeMap<_, _> = uri.query_pairs().collect();
 
-    let page_size = 200;
+        let max_depth: i64 = match qs.get("max_depth") {
+            Some(x) => x.parse().expect("unable to parse max_depth"),
+            _ => i64::max_value(),
+        };
 
-    let conn = get_conn();
+        let page_size = 200;
 
-    let rows =
-        conn.query(r#"SELECT event_id, events.type, state_key, depth, sender, state_group, content, origin_server_ts,
+        let conn = get_conn(&self.connection_string);
+
+        let rows =
+            conn.query(r#"SELECT event_id, events.type, state_key, depth, sender, state_group, content, origin_server_ts,
                    array(SELECT prev_event_id FROM event_edges WHERE is_state = false and event_id = events.event_id)
                    FROM events
                    LEFT JOIN state_events USING (event_id)
@@ -85,41 +88,46 @@ fn room(params: Params, req: Request, mut res: Response) {
                    &[&room_id, &max_depth, &page_size])
             .expect("room sql query failed");
 
-    let events: Vec<RoomRow> = rows.into_iter()
-        .map(|row| {
-            RoomRow {
-                event_id: row.get(0),
-                etype: row.get(1),
-                state_key: row.get(2),
-                depth: row.get(3),
-                sender: row.get(4),
-                state_group: row.get(5),
-                content: serde_json::from_str(&row.get::<_, String>(6))
-                    .expect("content was not json"),
-                ts: row.get(7),
-                edges: row.get(8),
-            }
-        })
-        .collect();
+        let events: Vec<RoomRow> = rows.into_iter()
+            .map(|row| {
+                RoomRow {
+                    event_id: row.get(0),
+                    etype: row.get(1),
+                    state_key: row.get(2),
+                    depth: row.get(3),
+                    sender: row.get(4),
+                    state_group: row.get(5),
+                    content: serde_json::from_str(&row.get::<_, String>(6))
+                        .expect("content was not json"),
+                    ts: row.get(7),
+                    edges: row.get(8),
+                }
+            })
+            .collect();
 
-    *res.status_mut() = StatusCode::Ok;
-    res.headers_mut().set_raw("Access-Control-Allow-Headers", vec![b"Origin, X-Requested-With, Content-Type, Accept".to_vec()]);
-    res.headers_mut().set_raw("Access-Control-Allow-Origin", vec![b"*".to_vec()]);
-    res.headers_mut().set_raw("Access-Control-Allow-Methods", vec![b"GET, POST, PUT, DELETE, OPTIONS".to_vec()]);
-    res.headers_mut().set_raw("Content-Type", vec![b"application/json".to_vec()]);
+        *res.status_mut() = StatusCode::Ok;
+        res.headers_mut().set_raw("Access-Control-Allow-Headers", vec![b"Origin, X-Requested-With, Content-Type, Accept".to_vec()]);
+        res.headers_mut().set_raw("Access-Control-Allow-Origin", vec![b"*".to_vec()]);
+        res.headers_mut().set_raw("Access-Control-Allow-Methods", vec![b"GET, POST, PUT, DELETE, OPTIONS".to_vec()]);
+        res.headers_mut().set_raw("Content-Type", vec![b"application/json".to_vec()]);
 
-    let mut res = res.start().expect("failed to prepare response for writing");
-    serde_json::to_writer(&mut res, &events).expect("failed to write json");
-    res.end().expect("failed to finish writing response");
+        let mut res = res.start().expect("failed to prepare response for writing");
+        serde_json::to_writer(&mut res, &events).expect("failed to write json");
+        res.end().expect("failed to finish writing response");
+    }
 }
 
+struct StateHandler {
+    connection_string: String,
+}
 
-fn state(params: Params, _: Request, mut res: Response) {
-    let event_id = params.find("event_id").expect("event_id not in params");
+impl RouteHandler for StateHandler {
+    fn handle(&self, params: Params, _: Request, mut res: Response) {
+        let event_id = params.find("event_id").expect("event_id not in params");
 
-    let conn = get_conn();
+        let conn = get_conn(&self.connection_string);
 
-    let rows = conn.query(r#"WITH RECURSIVE state(state_group) AS (
+        let rows = conn.query(r#"WITH RECURSIVE state(state_group) AS (
                 SELECT state_group FROM event_to_state_groups WHERE event_id = $1
                 UNION ALL
                 SELECT prev_state_group FROM state_group_edges e, state s
@@ -132,28 +140,29 @@ fn state(params: Params, _: Request, mut res: Response) {
             WHERE state_group IN (
                 SELECT state_group FROM state
             )"#,
-               &[&event_id])
-        .expect("state query failed");
+                 &[&event_id])
+            .expect("state query failed");
 
-    let state: Vec<StateRow> = rows.into_iter()
-        .map(|row| {
-            StateRow {
-                event_id: row.get(0),
-                etype: row.get(1),
-                state_key: row.get(2),
-            }
-        })
-        .collect();
+        let state: Vec<StateRow> = rows.into_iter()
+            .map(|row| {
+                StateRow {
+                    event_id: row.get(0),
+                    etype: row.get(1),
+                    state_key: row.get(2),
+                }
+            })
+            .collect();
 
-    *res.status_mut() = StatusCode::Ok;
-    res.headers_mut().set_raw("Access-Control-Allow-Headers", vec![b"Origin, X-Requested-With, Content-Type, Accept".to_vec()]);
-    res.headers_mut().set_raw("Access-Control-Allow-Origin", vec![b"*".to_vec()]);
-    res.headers_mut().set_raw("Access-Control-Allow-Methods", vec![b"GET, POST, PUT, DELETE, OPTIONS".to_vec()]);
-    res.headers_mut().set_raw("Content-Type", vec![b"application/json".to_vec()]);
+        *res.status_mut() = StatusCode::Ok;
+        res.headers_mut().set_raw("Access-Control-Allow-Headers", vec![b"Origin, X-Requested-With, Content-Type, Accept".to_vec()]);
+        res.headers_mut().set_raw("Access-Control-Allow-Origin", vec![b"*".to_vec()]);
+        res.headers_mut().set_raw("Access-Control-Allow-Methods", vec![b"GET, POST, PUT, DELETE, OPTIONS".to_vec()]);
+        res.headers_mut().set_raw("Content-Type", vec![b"application/json".to_vec()]);
 
-    let mut res = res.start().expect("failed to prepare response for writing");
-    serde_json::to_writer(&mut res, &state).expect("failed to write json");
-    res.end().expect("failed to finish writing response");
+        let mut res = res.start().expect("failed to prepare response for writing");
+        serde_json::to_writer(&mut res, &state).expect("failed to write json");
+        res.end().expect("failed to finish writing response");
+    }
 }
 
 fn index(_: Params, _: Request, res: Response) {
@@ -210,11 +219,15 @@ fn main() {
         12345
     };
 
+    let connstr = "postgresql://username:password@localhost:5435/synapse".to_string();
+
     let router = create_router! {
         "/" => Get => Box::new(index) as Box<RouteHandler>,
         "/assets/:asset" => Get => Box::new(asset) as Box<RouteHandler>,
-        "/room/:room_id" => Get => Box::new(room) as Box<RouteHandler>,
-        "/state/:event_id" => Get => Box::new(state) as Box<RouteHandler>,
+        "/room/:room_id" => Get => Box::new(RoomHandler { connection_string: connstr.clone() })
+            as Box<RouteHandler>,
+        "/state/:event_id" => Get => Box::new(StateHandler { connection_string: connstr.clone() })
+            as Box<RouteHandler>,
     };
 
     println!("Listening on port {}", port);
