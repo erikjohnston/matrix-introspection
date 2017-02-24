@@ -6,9 +6,10 @@ extern crate postgres;
 extern crate serde_derive;
 extern crate serde_json;
 
-
+use std::collections::BTreeMap;
 use hyper::status::StatusCode;
 use hyper::server::{Request, Response, Server};
+use hyper::uri::RequestUri;
 use hyper_router::{Params, RouteHandler};
 use postgres::{Connection, TlsMode};
 
@@ -40,9 +41,28 @@ struct StateRow {
     event_id: String,
 }
 
+fn parse_request_uri(req_uri: RequestUri) -> hyper::Url {
+    match req_uri {
+        RequestUri::AbsolutePath(s) =>
+            hyper::Url::parse(&format!("http://foo{}", s)).unwrap(), // ffs
+        RequestUri::AbsoluteUri(s) => s,
+        _ => panic!("unsupported uri type"),
+    }
+}
 
-fn room(params: Params, _: Request, mut res: Response) {
+fn room(params: Params, req: Request, mut res: Response) {
     let room_id = params.find("room_id").expect("room_id not in params");
+
+    /* please tell me there is an easier way to do this */
+    let uri = parse_request_uri(req.uri);
+    let qs: BTreeMap<_, _> = uri.query_pairs().collect();
+
+    let max_depth: i64 = match qs.get("max_depth") {
+        Some(x) => x.parse().expect("unable to parse max_depth"),
+        _ => i64::max_value(),
+    };
+
+    let page_size = 200;
 
     let conn = get_conn();
 
@@ -52,11 +72,11 @@ fn room(params: Params, _: Request, mut res: Response) {
                    FROM events
                    LEFT JOIN state_events USING (event_id)
                    LEFT JOIN event_to_state_groups USING (event_id)
-                   WHERE events.room_id = $1
+                   WHERE events.room_id = $1 AND topological_ordering <= $2::bigint
                    ORDER BY topological_ordering DESC
-                   LIMIT 100
+                   LIMIT $3::int
                    "#,
-                   &[&room_id])
+                   &[&room_id, &max_depth, &page_size])
             .expect("room sql query failed");
 
     let events: Vec<RoomRow> = rows.into_iter()
