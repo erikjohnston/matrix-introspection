@@ -7,6 +7,8 @@ extern crate serde_derive;
 extern crate serde_json;
 
 use std::collections::BTreeMap;
+use std::fs::File;
+use std::io;
 use hyper::status::StatusCode;
 use hyper::server::{Request, Response, Server};
 use hyper::uri::RequestUri;
@@ -151,9 +153,40 @@ fn state(params: Params, _: Request, mut res: Response) {
     res.end().expect("failed to finish writing response");
 }
 
+fn index(_: Params, _: Request, res: Response) {
+    serve_static("index.html", res);
+}
+
+fn asset(params: Params, _: Request, res: Response) {
+    let asset = params.find("asset").expect("asset not in params");
+    serve_static(&format!("assets/{}", asset), res);
+}
+
+fn serve_static(filename: &str, mut res: Response) {
+    let content_type = content_type_for_asset(filename);
+    println!("Serving {} as {}", filename, content_type);
+
+    let mut f = File::open(filename).expect(&format!("Failed to open '{}'", filename));
+    res.headers_mut().set_raw("Content-Type", vec![content_type.to_string().into_bytes()]);
+
+    let mut res = res.start().expect("failed to prepare response for writing");
+    io::copy(&mut f, &mut res).expect("failed to write file");
+    res.end().expect("failed to finish writing response");
+}
+
+fn content_type_for_asset(name: &str) -> &str {
+    return match name {
+        _ if name.ends_with(".css") => "text/css",
+        _ if name.ends_with(".js") => "application/javascript",
+        _ if name.ends_with(".html") => "text/html",
+        _ => "text/plain",
+    };
+}
 
 fn main() {
     let router = create_router! {
+        "/" => Get => Box::new(index) as Box<RouteHandler>,
+        "/assets/:asset" => Get => Box::new(asset) as Box<RouteHandler>,
         "/room/:room_id" => Get => Box::new(room) as Box<RouteHandler>,
         "/state/:event_id" => Get => Box::new(state) as Box<RouteHandler>,
     };
