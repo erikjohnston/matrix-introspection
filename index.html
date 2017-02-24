@@ -23,6 +23,14 @@
 </head>
 <body>
 
+<form id="main_form">
+    <label for="room_id_input">Room ID:</label>
+    <input id="room_id_input" name="room_id" type="text" size="30"/>
+    <label for="max_depth_input">Max depth:</label>
+    <input id="max_depth_input" name="max_depth" type="text" size="5"/>
+    <input type="submit"/>
+</form>
+
 <div id="container">
     <div id="rhs">
         <form id="event_id_form">
@@ -38,6 +46,22 @@
 </div>
 
 <script type="text/javascript">
+    // parse the query string
+    const params = {};
+    function decode(s) {
+        return decodeURIComponent(s.replace("+", " "));
+    }
+    for (const param of window.location.search.substring(1).split("&")) {
+        if(param == '') continue;
+        const s = param.split('=', 2);
+        params[decode(s[0])] = decode(s[1] || "");
+    }
+    const room_id = params['room_id'] || '!cURbafjkfsMDVwdRDQ:matrix.org';
+    let max_depth = params['max_depth'];
+    if (max_depth === undefined) { max_depth = ""; }
+    $('#room_id_input').val(room_id);
+    $('#max_depth_input').val(max_depth);
+
     // assign the given level to the node with the given event id, and walk the
     // tree down the edges to ensure that each parent has a higher level.
     function assignLevel(level, eventId, nodes, event_map) {
@@ -56,7 +80,11 @@
         }
     }
 
-    $.get( "http://localhost:12345/room/!cURbafjkfsMDVwdRDQ:matrix.org", function( data ) {
+    let q = `http://localhost:12345/room/${room_id}`;
+    if (max_depth != "") {
+        q += `?max_depth=${max_depth}`;
+    }
+    $.get( q, function( data ) {
         var event_map = {}
 
         var nodes = [];
