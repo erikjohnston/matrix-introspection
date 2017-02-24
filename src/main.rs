@@ -43,12 +43,10 @@ struct StateRow {
 
 fn parse_request_uri(req_uri: RequestUri) -> hyper::Url {
     match req_uri {
-        RequestUri::AbsolutePath(s) => {
-            // ffs
-            return hyper::Url::parse(&format!("http://foo{}", s)).unwrap();
-        }
-        RequestUri::AbsoluteUri(s) => { return s; }
-        _ => { panic!("unsupported uri type"); }
+        RequestUri::AbsolutePath(s) =>
+            hyper::Url::parse(&format!("http://foo{}", s)).unwrap(), // ffs
+        RequestUri::AbsoluteUri(s) => s,
+        _ => panic!("unsupported uri type"),
     }
 }
 
@@ -59,12 +57,9 @@ fn room(params: Params, req: Request, mut res: Response) {
     let uri = parse_request_uri(req.uri);
     let qs: BTreeMap<_, _> = uri.query_pairs().collect();
 
-    let max_depth = match qs.get("max_depth") {
-        Some(x) => {
-            x.parse::<i64>().expect(
-                &format!("unable to parse max_depth '{}'", x))
-        }
-        _ => i64::max_value()
+    let max_depth: i64 = match qs.get("max_depth") {
+        Some(x) => x.parse().expect("unable to parse max_depth"),
+        _ => i64::max_value(),
     };
 
     let page_size = 200;
