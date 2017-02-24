@@ -31,6 +31,7 @@ struct RoomRow {
     sender: String,
     state_group: Option<i64>,
     content: serde_json::Value,
+    ts: i64,
     edges: Vec<String>,
 }
 
@@ -67,7 +68,7 @@ fn room(params: Params, req: Request, mut res: Response) {
     let conn = get_conn();
 
     let rows =
-        conn.query(r#"SELECT event_id, events.type, state_key, depth, sender, state_group, content,
+        conn.query(r#"SELECT event_id, events.type, state_key, depth, sender, state_group, content, origin_server_ts,
                    array(SELECT prev_event_id FROM event_edges WHERE is_state = false and event_id = events.event_id)
                    FROM events
                    LEFT JOIN state_events USING (event_id)
@@ -90,7 +91,8 @@ fn room(params: Params, req: Request, mut res: Response) {
                 state_group: row.get(5),
                 content: serde_json::from_str(&row.get::<_, String>(6))
                     .expect("content was not json"),
-                edges: row.get(7),
+                ts: row.get(7),
+                edges: row.get(8),
             }
         })
         .collect();

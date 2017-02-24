@@ -93,7 +93,7 @@
             var row = data[i];
 
             event_map[row.event_id] = row;
-            
+
             nodes.push({
                 id: row.event_id,
                 label: row.event_id + "\ntype: " + row.etype + "\nstate_key: " + row.state_key,
@@ -106,7 +106,7 @@
                     to: row.edges[j],
                     arrows: 'to',
                 });
-            } 
+            }
         }
 
         var nodes = new vis.DataSet(nodes);
@@ -127,14 +127,17 @@
         var options = {
             layout: {
                 hierarchical: {
-                    sortMethod: "directed"
-                }
+                    sortMethod: "directed",
+                    nodeSpacing: 200,
+                    direction: "DU",
+                },
             },
-            interaction: { dragNodes :false },
+            interaction: { dragNodes: true },
             physics: {
-                enabled: false
+                enabled: false,
             },
         };
+
         var network = new vis.Network(container, data, options);
 
         network.on("click", function (params) {
@@ -149,13 +152,26 @@
         $("#event_id_form").on("submit", function(e) {
             e.preventDefault();
             var event_id=$("#event_id_input").val();
-            network.focus(event_id);
+            const ev = event_map[event_id];
+            if (ev) {
+                network.focus(event_id);
+                network.selectNodes([event_id]);
+            }
             showEventInfo(event_id);
         });
 
         function showEventInfo(event_id) {
-            $( "#info" ).html( "<pre>" + JSON.stringify(event_map[event_id], null, 4) + "</pre>" );
-            $( "#state" ).html( "" );
+            const ev = event_map[event_id];
+            if (ev) {
+                $( "#info" ).html(
+                    "<pre>" + JSON.stringify(ev, null, 4) + "</pre>"
+                        + "<p>" + new Date(ev.ts) + "</p>"
+                );
+            } else {
+                $( "#info" ).html("<p>Not found in this batch</p>");
+            }
+
+            $( "#state" ).html( "loading..." );
 
             $.get( "http://localhost:12345/state/" + event_id, function( data ) {
                 $( "#state" ).html( "<pre>" + JSON.stringify(data, null, 4) + "</pre>" );
