@@ -1,3 +1,4 @@
+extern crate getopts;
 #[macro_use]
 extern crate hyper_router;
 extern crate hyper;
@@ -6,6 +7,8 @@ extern crate postgres;
 extern crate serde_derive;
 extern crate serde_json;
 
+use getopts::Options;
+use std::env;
 use std::collections::BTreeMap;
 use std::fs::File;
 use std::io;
@@ -183,7 +186,30 @@ fn content_type_for_asset(name: &str) -> &str {
     };
 }
 
+
+fn print_usage(program: &str, opts: Options) {
+    let brief = format!("Usage: {} FILE [options]", program);
+    print!("{}", opts.usage(&brief));
+}
+
 fn main() {
+    let args: Vec<String> = env::args().collect();
+    let program = args[0].clone();
+    let mut opts = Options::new();
+    opts.optopt("p", "", "set listen port (default 12345)", "PORT");
+    opts.optflag("h", "help", "print this help menu");
+    let parsed_opts = opts.parse(&args[1..]).expect("Error parsing commandline");
+    if parsed_opts.opt_present("h") {
+        print_usage(&program, opts);
+        return;
+    }
+
+    let port = if let Some(x) = parsed_opts.opt_str("p") {
+        x.parse::<u16>().expect("unable to parse port")
+    } else {
+        12345
+    };
+
     let router = create_router! {
         "/" => Get => Box::new(index) as Box<RouteHandler>,
         "/assets/:asset" => Get => Box::new(asset) as Box<RouteHandler>,
@@ -191,5 +217,6 @@ fn main() {
         "/state/:event_id" => Get => Box::new(state) as Box<RouteHandler>,
     };
 
-    Server::http("0.0.0.0:12345").unwrap().handle(router).unwrap();
+    println!("Listening on port {}", port);
+    Server::http(("0.0.0.0", port)).unwrap().handle(router).unwrap();
 }
