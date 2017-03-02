@@ -80,7 +80,7 @@
         }
     }
 
-    let q = `http://localhost:12345/room/${room_id}`;
+    let q = `/room/${room_id}`;
     if (max_depth != "") {
         q += `?max_depth=${max_depth}`;
     }
@@ -173,7 +173,7 @@
 
             $( "#state" ).html( "loading..." );
 
-            $.get( "http://localhost:12345/state/" + event_id, function( data ) {
+            $.get( "/state/" + event_id, function( data ) {
                 $( "#state" ).html( "<pre>" + JSON.stringify(data, null, 4) + "</pre>" );
             }, "json");
         }
