@@ -206,6 +206,7 @@ fn main() {
     let program = args[0].clone();
     let mut opts = Options::new();
     opts.optopt("p", "", "set listen port (default 12345)", "PORT");
+    opts.optopt("c", "", "set db connection string", "CONNSTR");
     opts.optflag("h", "help", "print this help menu");
     let parsed_opts = opts.parse(&args[1..]).expect("Error parsing commandline");
     if parsed_opts.opt_present("h") {
@@ -219,7 +220,8 @@ fn main() {
         12345
     };
 
-    let connstr = "postgresql://username:password@localhost:5435/synapse".to_string();
+    let connstr = parsed_opts.opt_str("c").
+        expect("connection string must be supplied. example: \"-c postgresql://username:password@localhost:5435/synapse\"");
 
     let router = create_router! {
         "/" => Get => Box::new(index) as Box<RouteHandler>,
