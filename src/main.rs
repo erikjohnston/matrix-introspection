@@ -6,15 +6,12 @@ extern crate postgres;
 #[macro_use]
 extern crate serde_derive;
 extern crate serde_json;
-extern crate toml;
 
 use getopts::Options;
 use std::env;
 use std::collections::BTreeMap;
 use std::fs::File;
 use std::io;
-use std::io::Read;
-use std::path::Path;
 use hyper::status::StatusCode;
 use hyper::server::{Request, Response, Server};
 use hyper::uri::RequestUri;
@@ -27,12 +24,6 @@ fn get_conn(connstr: &str) -> Connection {
         .unwrap()
 }
 
-#[derive(Default)]
-#[derive(Deserialize)]
-struct Config {
-    port: Option<u16>,
-    db: Option<String>,
-}
 
 #[derive(Serialize)]
 struct RoomRow {
@@ -210,30 +201,11 @@ fn print_usage(program: &str, opts: Options) {
     print!("{}", opts.usage(&brief));
 }
 
-fn load_config(config_file: Option<String>) -> Config {
-    let f = match config_file {
-        Some(f) => f,
-        None => {
-            let default = "config.toml";
-            if !Path::new(default).exists() {
-                return Config::default();
-            }
-            default.to_string()
-        }
-    };
-
-    let mut buf = String::new();
-    let mut fh = File::open(&f).expect(&format!("Unable to open config file {}", f));
-    fh.read_to_string(&mut buf).unwrap();
-    return toml::from_str(&buf).unwrap();
-}
-
 fn main() {
     let args: Vec<String> = env::args().collect();
     let program = args[0].clone();
     let mut opts = Options::new();
     opts.optopt("p", "", "set listen port (default 12345)", "PORT");
-    opts.optopt("c", "", "set config file (default config.toml)", "FILE");
     opts.optflag("h", "help", "print this help menu");
     let parsed_opts = opts.parse(&args[1..]).expect("Error parsing commandline");
     if parsed_opts.opt_present("h") {
@@ -241,17 +213,13 @@ fn main() {
         return;
     }
 
-    let config = load_config(parsed_opts.opt_str("c"));
-
     let port = if let Some(x) = parsed_opts.opt_str("p") {
         x.parse::<u16>().expect("unable to parse port")
     } else {
-        config.port.unwrap_or(12345)
+        12345
     };
 
-    let connstr = config.db.unwrap_or(
-        "postgresql://username:password@localhost:5435/synapse".to_string()
-    );
+    let connstr = "postgresql://username:password@localhost:5435/synapse".to_string();
 
     let router = create_router! {
         "/" => Get => Box::new(index) as Box<RouteHandler>,
