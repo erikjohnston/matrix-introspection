@@ -6,6 +6,7 @@ extern crate postgres;
 #[macro_use]
 extern crate serde_derive;
 extern crate serde_json;
+extern crate serde;
 
 use getopts::Options;
 use hyper::server::{Request, Response, Server};
@@ -13,6 +14,7 @@ use hyper::status::StatusCode;
 use hyper::uri::RequestUri;
 use hyper_router::{Params, RouteHandler};
 use postgres::{Connection, TlsMode};
+use serde::Serialize;
 use std::collections::BTreeMap;
 use std::env;
 use std::fs::File;
@@ -52,12 +54,24 @@ fn parse_request_uri(req_uri: RequestUri) -> hyper::Url {
     }
 }
 
+fn write_200_json<T: Serialize>(mut res: Response, val: &T) {
+    *res.status_mut() = StatusCode::Ok;
+    res.headers_mut().set_raw("Access-Control-Allow-Headers", vec![b"Origin, X-Requested-With, Content-Type, Accept".to_vec()]);
+    res.headers_mut().set_raw("Access-Control-Allow-Origin", vec![b"*".to_vec()]);
+    res.headers_mut().set_raw("Access-Control-Allow-Methods", vec![b"GET, POST, PUT, DELETE, OPTIONS".to_vec()]);
+    res.headers_mut().set_raw("Content-Type", vec![b"application/json".to_vec()]);
+
+    let mut res = res.start().expect("failed to prepare response for writing");
+    serde_json::to_writer(&mut res, val).expect("failed to write json");
+    res.end().expect("failed to finish writing response");
+}
+
 struct RoomHandler {
     connection_string: String,
 }
 
 impl RouteHandler for RoomHandler {
-    fn handle(&self, params: Params, req: Request, mut res: Response) {
+    fn handle(&self, params: Params, req: Request, res: Response) {
         let room_id = params.find("room_id").expect("room_id not in params");
 
         /* please tell me there is an easier way to do this */
@@ -104,17 +118,7 @@ impl RouteHandler for RoomHandler {
             })
             .collect();
 
-        *res.status_mut() = StatusCode::Ok;
-        res.headers_mut().set_raw("Access-Control-Allow-Headers",
-                                  vec![b"Origin, X-Requested-With, Content-Type, Accept".to_vec()]);
-        res.headers_mut().set_raw("Access-Control-Allow-Origin", vec![b"*".to_vec()]);
-        res.headers_mut().set_raw("Access-Control-Allow-Methods",
-                                  vec![b"GET, POST, PUT, DELETE, OPTIONS".to_vec()]);
-        res.headers_mut().set_raw("Content-Type", vec![b"application/json".to_vec()]);
-
-        let mut res = res.start().expect("failed to prepare response for writing");
-        serde_json::to_writer(&mut res, &events).expect("failed to write json");
-        res.end().expect("failed to finish writing response");
+        write_200_json(res, &events);
     }
 }
 
@@ -123,7 +127,7 @@ struct StateHandler {
 }
 
 impl RouteHandler for StateHandler {
-    fn handle(&self, params: Params, _: Request, mut res: Response) {
+    fn handle(&self, params: Params, _: Request, res: Response) {
         let event_id = params.find("event_id").expect("event_id not in params");
 
         let conn = get_conn(&self.connection_string);
@@ -155,17 +159,7 @@ impl RouteHandler for StateHandler {
             })
             .collect();
 
-        *res.status_mut() = StatusCode::Ok;
-        res.headers_mut().set_raw("Access-Control-Allow-Headers",
-                                  vec![b"Origin, X-Requested-With, Content-Type, Accept".to_vec()]);
-        res.headers_mut().set_raw("Access-Control-Allow-Origin", vec![b"*".to_vec()]);
-        res.headers_mut().set_raw("Access-Control-Allow-Methods",
-                                  vec![b"GET, POST, PUT, DELETE, OPTIONS".to_vec()]);
-        res.headers_mut().set_raw("Content-Type", vec![b"application/json".to_vec()]);
-
-        let mut res = res.start().expect("failed to prepare response for writing");
-        serde_json::to_writer(&mut res, &state).expect("failed to write json");
-        res.end().expect("failed to finish writing response");
+        write_200_json(res, &state);
     }
 }
 
@@ -227,6 +221,8 @@ fn main() {
     let connstr = parsed_opts.opt_str("c")
         .expect("connection string must be supplied. example: \"-c \
                  postgresql://username:password@localhost:5435/synapse\"");
+
+    get_conn(&connstr); // Let's try to connect now to see if config works.
 
     let router = create_router! {
         "/" => Get => Box::new(index) as Box<RouteHandler>,
