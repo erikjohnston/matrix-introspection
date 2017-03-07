@@ -8,20 +8,19 @@ extern crate serde_derive;
 extern crate serde_json;
 
 use getopts::Options;
-use std::env;
-use std::collections::BTreeMap;
-use std::fs::File;
-use std::io;
-use hyper::status::StatusCode;
 use hyper::server::{Request, Response, Server};
+use hyper::status::StatusCode;
 use hyper::uri::RequestUri;
 use hyper_router::{Params, RouteHandler};
 use postgres::{Connection, TlsMode};
+use std::collections::BTreeMap;
+use std::env;
+use std::fs::File;
+use std::io;
 
 
 fn get_conn(connstr: &str) -> Connection {
-    Connection::connect(connstr, TlsMode::None)
-        .unwrap()
+    Connection::connect(connstr, TlsMode::None).unwrap()
 }
 
 
@@ -47,8 +46,7 @@ struct StateRow {
 
 fn parse_request_uri(req_uri: RequestUri) -> hyper::Url {
     match req_uri {
-        RequestUri::AbsolutePath(s) =>
-            hyper::Url::parse(&format!("http://foo{}", s)).unwrap(), // ffs
+        RequestUri::AbsolutePath(s) => hyper::Url::parse(&format!("http://foo{}", s)).unwrap(), // ffs
         RequestUri::AbsoluteUri(s) => s,
         _ => panic!("unsupported uri type"),
     }
@@ -75,18 +73,19 @@ impl RouteHandler for RoomHandler {
 
         let conn = get_conn(&self.connection_string);
 
-        let rows =
-            conn.query(r#"SELECT event_id, events.type, state_key, depth, sender, state_group, content, origin_server_ts,
-                   array(SELECT prev_event_id FROM event_edges WHERE is_state = false and event_id = events.event_id)
-                   FROM events
-                   LEFT JOIN state_events USING (event_id)
-                   LEFT JOIN event_to_state_groups USING (event_id)
-                   WHERE events.room_id = $1 AND topological_ordering <= $2::bigint
-                   ORDER BY topological_ordering DESC
-                   LIMIT $3::int
-                   "#,
-                   &[&room_id, &max_depth, &page_size])
-            .expect("room sql query failed");
+        let rows =conn.query(
+            r#"
+            SELECT event_id, events.type, state_key, depth, sender, state_group, content, origin_server_ts,
+                array(SELECT prev_event_id FROM event_edges WHERE is_state = false and event_id = events.event_id)
+            FROM events
+            LEFT JOIN state_events USING (event_id)
+            LEFT JOIN event_to_state_groups USING (event_id)
+            WHERE events.room_id = $1 AND topological_ordering <= $2::bigint
+            ORDER BY topological_ordering DESC
+            LIMIT $3::int
+            "#,
+            &[&room_id, &max_depth, &page_size]
+        ).expect("room sql query failed");
 
         let events: Vec<RoomRow> = rows.into_iter()
             .map(|row| {
@@ -106,9 +105,11 @@ impl RouteHandler for RoomHandler {
             .collect();
 
         *res.status_mut() = StatusCode::Ok;
-        res.headers_mut().set_raw("Access-Control-Allow-Headers", vec![b"Origin, X-Requested-With, Content-Type, Accept".to_vec()]);
+        res.headers_mut().set_raw("Access-Control-Allow-Headers",
+                                  vec![b"Origin, X-Requested-With, Content-Type, Accept".to_vec()]);
         res.headers_mut().set_raw("Access-Control-Allow-Origin", vec![b"*".to_vec()]);
-        res.headers_mut().set_raw("Access-Control-Allow-Methods", vec![b"GET, POST, PUT, DELETE, OPTIONS".to_vec()]);
+        res.headers_mut().set_raw("Access-Control-Allow-Methods",
+                                  vec![b"GET, POST, PUT, DELETE, OPTIONS".to_vec()]);
         res.headers_mut().set_raw("Content-Type", vec![b"application/json".to_vec()]);
 
         let mut res = res.start().expect("failed to prepare response for writing");
@@ -127,7 +128,8 @@ impl RouteHandler for StateHandler {
 
         let conn = get_conn(&self.connection_string);
 
-        let rows = conn.query(r#"WITH RECURSIVE state(state_group) AS (
+        let rows = conn.query(
+            r#"WITH RECURSIVE state(state_group) AS (
                 SELECT state_group FROM event_to_state_groups WHERE event_id = $1
                 UNION ALL
                 SELECT prev_state_group FROM state_group_edges e, state s
@@ -140,8 +142,8 @@ impl RouteHandler for StateHandler {
             WHERE state_group IN (
                 SELECT state_group FROM state
             )"#,
-                 &[&event_id])
-            .expect("state query failed");
+            &[&event_id]
+        ).expect("state query failed");
 
         let state: Vec<StateRow> = rows.into_iter()
             .map(|row| {
@@ -154,9 +156,11 @@ impl RouteHandler for StateHandler {
             .collect();
 
         *res.status_mut() = StatusCode::Ok;
-        res.headers_mut().set_raw("Access-Control-Allow-Headers", vec![b"Origin, X-Requested-With, Content-Type, Accept".to_vec()]);
+        res.headers_mut().set_raw("Access-Control-Allow-Headers",
+                                  vec![b"Origin, X-Requested-With, Content-Type, Accept".to_vec()]);
         res.headers_mut().set_raw("Access-Control-Allow-Origin", vec![b"*".to_vec()]);
-        res.headers_mut().set_raw("Access-Control-Allow-Methods", vec![b"GET, POST, PUT, DELETE, OPTIONS".to_vec()]);
+        res.headers_mut().set_raw("Access-Control-Allow-Methods",
+                                  vec![b"GET, POST, PUT, DELETE, OPTIONS".to_vec()]);
         res.headers_mut().set_raw("Content-Type", vec![b"application/json".to_vec()]);
 
         let mut res = res.start().expect("failed to prepare response for writing");
@@ -187,12 +191,12 @@ fn serve_static(filename: &str, mut res: Response) {
 }
 
 fn content_type_for_asset(name: &str) -> &str {
-    return match name {
+    match name {
         _ if name.ends_with(".css") => "text/css",
         _ if name.ends_with(".js") => "application/javascript",
         _ if name.ends_with(".html") => "text/html",
         _ => "text/plain",
-    };
+    }
 }
 
 
@@ -220,8 +224,9 @@ fn main() {
         12345
     };
 
-    let connstr = parsed_opts.opt_str("c").
-        expect("connection string must be supplied. example: \"-c postgresql://username:password@localhost:5435/synapse\"");
+    let connstr = parsed_opts.opt_str("c")
+        .expect("connection string must be supplied. example: \"-c \
+                 postgresql://username:password@localhost:5435/synapse\"");
 
     let router = create_router! {
         "/" => Get => Box::new(index) as Box<RouteHandler>,
