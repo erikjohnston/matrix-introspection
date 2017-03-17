@@ -7,23 +7,25 @@ extern crate postgres;
 extern crate serde_derive;
 extern crate serde_json;
 extern crate serde;
+extern crate rusqlite;
+
+#[macro_use]
+extern crate quick_error;
 
 use getopts::Options;
 use hyper::server::{Request, Response, Server};
 use hyper::status::StatusCode;
 use hyper::uri::RequestUri;
 use hyper_router::{Params, RouteHandler};
-use postgres::{Connection, TlsMode};
 use serde::Serialize;
 use std::collections::BTreeMap;
 use std::env;
 use std::fs::File;
 use std::io;
 
+mod database;
+use database::{DatabaseConnection, DatabaseConnector, PostgresConnectionExt};
 
-fn get_conn(connstr: &str) -> Connection {
-    Connection::connect(connstr, TlsMode::None).unwrap()
-}
 
 
 #[derive(Serialize)]
@@ -67,7 +69,7 @@ fn write_200_json<T: Serialize>(mut res: Response, val: &T) {
 }
 
 struct RoomHandler {
-    connection_string: String,
+    connector: DatabaseConnector,
 }
 
 impl RouteHandler for RoomHandler {
@@ -85,54 +87,94 @@ impl RouteHandler for RoomHandler {
 
         let page_size = 200;
 
-        let conn = get_conn(&self.connection_string);
+        let mut conn = self.connector.connect();
 
-        let rows =conn.query(
-            r#"
-            SELECT event_id, events.type, state_key, depth, sender, state_group, content, origin_server_ts,
-                array(SELECT prev_event_id FROM event_edges WHERE is_state = false and event_id = events.event_id)
-            FROM events
-            LEFT JOIN state_events USING (event_id)
-            LEFT JOIN event_to_state_groups USING (event_id)
-            WHERE events.room_id = $1 AND topological_ordering <= $2::bigint
-            ORDER BY topological_ordering DESC
-            LIMIT $3::int
-            "#,
-            &[&room_id, &max_depth, &page_size]
-        ).expect("room sql query failed");
+        let events = match conn {
+            DatabaseConnection::Postgres(ref mut conn) => {
+                conn.query_rows(
+                    r#"
+                    SELECT event_id, events.type, state_key, depth, sender, state_group, content, origin_server_ts,
+                        array(SELECT prev_event_id FROM event_edges WHERE is_state = false and event_id = events.event_id)
+                    FROM events
+                    LEFT JOIN state_events USING (event_id)
+                    LEFT JOIN event_to_state_groups USING (event_id)
+                    WHERE events.room_id = $1 AND topological_ordering <= $2::bigint
+                    ORDER BY topological_ordering DESC
+                    LIMIT $3::int
+                    "#,
+                    &[&room_id, &max_depth, &page_size],
+                    |row| RoomRow {
+                        event_id: row.get(0),
+                        etype: row.get(1),
+                        state_key: row.get(2),
+                        depth: row.get(3),
+                        sender: row.get(4),
+                        state_group: row.get(5),
+                        content: serde_json::from_str(&row.get::<_, String>(6))
+                            .expect("content was not json"),
+                        ts: row.get(7),
+                        edges: row.get(8),
+                    }
+                ).expect("room sql query failed")
+            }
+            DatabaseConnection::Sqlite(_) => {
+                let mut events = conn.query(
+                    r#"
+                    SELECT event_id, events.type, state_key, depth, sender, state_group, content, origin_server_ts
+                    FROM events
+                    LEFT JOIN state_events USING (event_id)
+                    LEFT JOIN event_to_state_groups USING (event_id)
+                    WHERE events.room_id = $1 AND topological_ordering <= $2::bigint
+                    ORDER BY topological_ordering DESC
+                    LIMIT $3::int
+                    "#,
+                    &[&room_id, &max_depth, &page_size],
+                    |row| RoomRow {
+                        event_id: row.get(0),
+                        etype: row.get(1),
+                        state_key: row.get(2),
+                        depth: row.get(3),
+                        sender: row.get(4),
+                        state_group: row.get(5),
+                        content: serde_json::from_str(&row.get::<String>(6))
+                            .expect("content was not json"),
+                        ts: row.get(7),
+                        edges: Vec::new(),
+                    }
+                ).expect("room sql query failed");
 
-        let events: Vec<RoomRow> = rows.into_iter()
-            .map(|row| {
-                RoomRow {
-                    event_id: row.get(0),
-                    etype: row.get(1),
-                    state_key: row.get(2),
-                    depth: row.get(3),
-                    sender: row.get(4),
-                    state_group: row.get(5),
-                    content: serde_json::from_str(&row.get::<_, String>(6))
-                        .expect("content was not json"),
-                    ts: row.get(7),
-                    edges: row.get(8),
+                for event in &mut events {
+                    let edges = conn.query(
+                        r#"
+                        SELECT prev_event_id FROM event_edges
+                        WHERE is_state = 0 and event_id = $1
+                        "#,
+                        &[&event.event_id],
+                        |row| row.get(0)
+                    ).expect("room sql query for event edges failed");
+
+                    event.edges = edges;
                 }
-            })
-            .collect();
+
+                events
+            }
+        };        
 
         write_200_json(res, &events);
     }
 }
 
 struct StateHandler {
-    connection_string: String,
+    connector: DatabaseConnector,
 }
 
 impl RouteHandler for StateHandler {
     fn handle(&self, params: Params, _: Request, res: Response) {
         let event_id = params.find("event_id").expect("event_id not in params");
 
-        let conn = get_conn(&self.connection_string);
+        let mut conn = self.connector.connect();
 
-        let rows = conn.query(
+        let state = conn.query(
             r#"WITH RECURSIVE state(state_group) AS (
                 SELECT state_group FROM event_to_state_groups WHERE event_id = $1
                 UNION ALL
@@ -146,18 +188,13 @@ impl RouteHandler for StateHandler {
             WHERE state_group IN (
                 SELECT state_group FROM state
             )"#,
-            &[&event_id]
+            &[&event_id],
+            |row| StateRow {
+                event_id: row.get(0),
+                etype: row.get(1),
+                state_key: row.get(2),
+            }
         ).expect("state query failed");
-
-        let state: Vec<StateRow> = rows.into_iter()
-            .map(|row| {
-                StateRow {
-                    event_id: row.get(0),
-                    etype: row.get(1),
-                    state_key: row.get(2),
-                }
-            })
-            .collect();
 
         write_200_json(res, &state);
     }
@@ -222,14 +259,16 @@ fn main() {
         .expect("connection string must be supplied. example: \"-c \
                  postgresql://username:password@localhost:5435/synapse\"");
 
-    get_conn(&connstr); // Let's try to connect now to see if config works.
+    let connector = DatabaseConnector::Sqlite3(connstr);
+
+    connector.connect(); // Let's try to connect now to see if config works.
 
     let router = create_router! {
         "/" => Get => Box::new(index) as Box<RouteHandler>,
         "/assets/:asset" => Get => Box::new(asset) as Box<RouteHandler>,
-        "/room/:room_id" => Get => Box::new(RoomHandler { connection_string: connstr.clone() })
+        "/room/:room_id" => Get => Box::new(RoomHandler { connector: connector.clone() })
             as Box<RouteHandler>,
-        "/state/:event_id" => Get => Box::new(StateHandler { connection_string: connstr.clone() })
+        "/state/:event_id" => Get => Box::new(StateHandler { connector: connector.clone() })
             as Box<RouteHandler>,
     };
 
