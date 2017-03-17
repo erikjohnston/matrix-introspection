@@ -1,10 +1,10 @@
 [package]
 authors = ["Erik Johnston <erikj@matrix.org>"]
-name = "viz-synapse"
+name = "matrix_introspection"
 version = "0.1.0"
 
 [dependencies]
-getopts = "0.2"
+clap = "2.21.1"
 hyper = "0.10.0"
 postgres = "0.13.3"
 quick-error = "1.1.0"

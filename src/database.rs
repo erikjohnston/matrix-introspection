@@ -11,9 +11,11 @@ quick_error! {
     pub enum DatabaseError {
         Postgres(err: postgres::error::Error) {
             from()
+            description(err.description())
         }
         Sqlite(err: rusqlite::Error) {
             from()
+            description(err.description())
         }
     }
 }
@@ -92,8 +94,8 @@ impl<T> FromSql for Option<T> where T: FromSql + Clone {}
 
 
 macro_rules! create_to_sql {
-    ($type:ty) => {
-        impl ToSql for $type {
+    ($typ:ty) => {
+        impl ToSql for $typ {
             fn as_postgres(&self) -> &PostgresToSql { self }
             fn as_sqlite(&self) -> &Sqlite3ToSql { self }
         }
@@ -102,6 +104,9 @@ macro_rules! create_to_sql {
 
 create_to_sql!{ String }
 create_to_sql!{ i64 }
+create_to_sql!{ i16 }
+create_to_sql!{ i32 }
+create_to_sql!{ i8 }
 
 impl<'a> ToSql for &'a str {
     fn as_postgres(&self) -> &PostgresToSql { self }
