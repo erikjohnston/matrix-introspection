@@ -259,6 +259,7 @@ fn main() {
                    For postgres this should be e.g. postgresql://username:password@localhost:5435/synapse\n\
                    For sqlite it should be the path to the database")
             .next_line_help(true)
+            .required(true)
         )
         .get_matches();
 
