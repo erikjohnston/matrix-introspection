@@ -180,19 +180,22 @@ impl RouteHandler for StateHandler {
         let mut conn = self.connector.connect();
 
         let state = conn.query(
-            r#"WITH RECURSIVE state(state_group) AS (
+            r#"
+            WITH RECURSIVE state(state_group) AS (
                 SELECT state_group FROM event_to_state_groups WHERE event_id = $1
                 UNION ALL
                 SELECT prev_state_group FROM state_group_edges e, state s
                 WHERE s.state_group = e.state_group
             )
-            SELECT DISTINCT last_value(event_id) OVER (
-                PARTITION BY type, state_key ORDER BY state_group ASC
-                ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING
-            ) AS event_id, type, state_key FROM state_groups_state
-            WHERE state_group IN (
-                SELECT state_group FROM state
-            )"#,
+            SELECT event_id, type, state_key FROM state_groups_state
+            NATURAL JOIN (
+                SELECT type, state_key, max(state_group) as state_group FROM state_groups_state
+                WHERE state_group IN (
+                    SELECT state_group FROM state
+                )
+                GROUP BY type, state_key
+            ) es
+            "#,
             &[&event_id],
             |row| StateRow {
                 event_id: row.get(0),
