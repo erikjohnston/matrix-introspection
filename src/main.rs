@@ -77,7 +77,7 @@ impl RouteHandler for RoomHandler {
     fn handle(&self, params: Params, req: Request, res: Response) {
         let room_id = params.find("room_id").expect("room_id not in params");
 
-        /* please tell me there is an easier way to do this */
+        // please tell me there is an easier way to do this
         let uri = parse_request_uri(req.uri);
         let qs: BTreeMap<_, _> = uri.query_pairs().collect();
 
@@ -267,11 +267,6 @@ fn main() {
         .get_matches();
 
     let port = value_t_or_exit!(matches, "port", u16);
-
-    // let connstr = parsed_opts.opt_str("c")
-    //     .expect("connection string must be supplied. example: \"-c \
-    //              postgresql://username:password@localhost:5435/synapse\"");
-
     let db_type = value_t_or_exit!(matches, "db", String);
     let connstr = value_t_or_exit!(matches, "connection_string", String);
 
@@ -284,13 +279,11 @@ fn main() {
 
     connector.connect(); // Let's try to connect now to see if config works.
 
-    let router = create_router! {
-        "/" => Get => Box::new(index) as Box<RouteHandler>,
-        "/assets/:asset" => Get => Box::new(asset) as Box<RouteHandler>,
-        "/room/:room_id" => Get => Box::new(RoomHandler { connector: connector.clone() })
-            as Box<RouteHandler>,
-        "/state/:event_id" => Get => Box::new(StateHandler { connector: connector.clone() })
-            as Box<RouteHandler>,
+    let router = create_boxed_router! {
+        "/" => Get => index,
+        "/assets/:asset" => Get => asset,
+        "/room/:room_id" => Get => RoomHandler { connector: connector.clone() },
+        "/state/:event_id" => Get => StateHandler { connector: connector.clone() },
     };
 
     println!("Listening on port {}", port);
