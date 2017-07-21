@@ -47,6 +47,8 @@ struct StateRow {
     etype: String,
     state_key: String,
     event_id: String,
+    content: serde_json::Value,
+    depth: i64,
 }
 
 fn parse_request_uri(req_uri: RequestUri) -> hyper::Url {
@@ -163,7 +165,7 @@ impl RouteHandler for RoomHandler {
 
                 events
             }
-        };        
+        };
 
         write_200_json(res, &events);
     }
@@ -187,7 +189,8 @@ impl RouteHandler for StateHandler {
                 SELECT prev_state_group FROM state_group_edges e, state s
                 WHERE s.state_group = e.state_group
             )
-            SELECT event_id, type, state_key FROM state_groups_state
+            SELECT event_id, es.type, state_key, e.content, e.depth
+            FROM state_groups_state
             NATURAL JOIN (
                 SELECT type, state_key, max(state_group) as state_group FROM state_groups_state
                 WHERE state_group IN (
@@ -195,12 +198,16 @@ impl RouteHandler for StateHandler {
                 )
                 GROUP BY type, state_key
             ) es
+            LEFT JOIN events e using (event_id);
             "#,
             &[&event_id],
             |row| StateRow {
                 event_id: row.get(0),
                 etype: row.get(1),
                 state_key: row.get(2),
+                content: serde_json::from_str(&row.get::<String>(3))
+                    .expect("content was not json"),
+                depth: row.get(4),
             }
         ).expect("state query failed");
 
