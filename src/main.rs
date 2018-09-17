@@ -37,7 +37,7 @@ struct RoomRow {
     depth: i64,
     sender: String,
     state_group: Option<i64>,
-    content: serde_json::Value,
+    json: serde_json::Value,
     ts: i64,
     edges: Vec<String>,
 }
@@ -97,12 +97,13 @@ impl RouteHandler for RoomHandler {
                 pg_conn.query_rows(
                     r#"
                     SELECT event_id, events.type, state_key, depth, sender, state_group,
-                        content, origin_server_ts,
+                        json, origin_server_ts
                         array(
                             SELECT prev_event_id FROM event_edges
                             WHERE is_state = false and event_id = events.event_id
                         )
                     FROM events
+                    JOIN event_json USING (event_id)
                     LEFT JOIN state_events USING (event_id)
                     LEFT JOIN event_to_state_groups USING (event_id)
                     WHERE events.room_id = $1 AND topological_ordering <= $2::bigint
@@ -117,8 +118,8 @@ impl RouteHandler for RoomHandler {
                         depth: row.get(3),
                         sender: row.get(4),
                         state_group: row.get(5),
-                        content: serde_json::from_str(&row.get::<_, String>(6))
-                            .expect("content was not json"),
+                        json: serde_json::from_str(&row.get::<_, String>(6))
+                            .expect("json was not json"),
                         ts: row.get(7),
                         edges: row.get(8),
                     }
@@ -127,8 +128,9 @@ impl RouteHandler for RoomHandler {
             DatabaseConnection::Sqlite(_) => {
                 let mut events = conn.query(
                     r#"
-                    SELECT event_id, events.type, state_key, depth, sender, state_group, content, origin_server_ts
+                    SELECT event_id, events.type, state_key, depth, sender, state_group, json, origin_server_ts
                     FROM events
+                    JOIN event_json USING (event_id)
                     LEFT JOIN state_events USING (event_id)
                     LEFT JOIN event_to_state_groups USING (event_id)
                     WHERE events.room_id = $1 AND topological_ordering <= $2::bigint
@@ -143,8 +145,8 @@ impl RouteHandler for RoomHandler {
                         depth: row.get(3),
                         sender: row.get(4),
                         state_group: row.get(5),
-                        content: serde_json::from_str(&row.get::<String>(6))
-                            .expect("content was not json"),
+                        json: serde_json::from_str(&row.get::<String>(6))
+                            .expect("json was not json"),
                         ts: row.get(7),
                         edges: Vec::new(),
                     }
@@ -189,7 +191,7 @@ impl RouteHandler for StateHandler {
                 SELECT prev_state_group FROM state_group_edges e, state s
                 WHERE s.state_group = e.state_group
             )
-            SELECT event_id, es.type, state_key, e.content, e.depth
+            SELECT event_id, es.type, state_key, ej.json, e.depth
             FROM state_groups_state
             NATURAL JOIN (
                 SELECT type, state_key, max(state_group) as state_group FROM state_groups_state
@@ -198,21 +200,26 @@ impl RouteHandler for StateHandler {
                 )
                 GROUP BY type, state_key
             ) es
-            LEFT JOIN events e using (event_id);
+            LEFT JOIN events e using (event_id)
+            LEFT JOIN event_json ej USING (event_id)
             "#,
             &[&event_id],
             |row| StateRow {
                 event_id: row.get(0),
                 etype: row.get(1),
                 state_key: row.get(2),
-                content: serde_json::from_str(&row.get::<String>(3))
-                    .expect("content was not json"),
+                content: content_from_json(row.get(3)),
                 depth: row.get(4),
             }
         ).expect("state query failed");
 
         write_200_json(res, &state);
     }
+}
+
+fn content_from_json(s: String) -> serde_json::Value {
+    let json: serde_json::Value = serde_json::from_str(&s).expect("content was not json");
+    return json["content"].clone()
 }
 
 fn index(_: Params, _: Request, res: Response) {
