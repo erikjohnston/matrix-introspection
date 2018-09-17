@@ -97,7 +97,7 @@ impl RouteHandler for RoomHandler {
                 pg_conn.query_rows(
                     r#"
                     SELECT event_id, events.type, state_key, depth, sender, state_group,
-                        json, origin_server_ts
+                        json, origin_server_ts,
                         array(
                             SELECT prev_event_id FROM event_edges
                             WHERE is_state = false and event_id = events.event_id
