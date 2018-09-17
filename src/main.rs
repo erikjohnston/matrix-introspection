@@ -40,6 +40,7 @@ struct RoomRow {
     content: serde_json::Value,
     ts: i64,
     edges: Vec<String>,
+    stream_ordering: i32,
 }
 
 #[derive(Serialize)]
@@ -83,8 +84,8 @@ impl RouteHandler for RoomHandler {
         let uri = parse_request_uri(req.uri);
         let qs: BTreeMap<_, _> = uri.query_pairs().collect();
 
-        let max_depth: i64 = match qs.get("max_depth") {
-            Some(x) => x.parse().expect("unable to parse max_depth"),
+        let max_stream: i64 = match qs.get("max_stream") {
+            Some(x) => x.parse().expect("unable to parse max_stream"),
             _ => i64::max_value(),
         };
 
@@ -97,7 +98,7 @@ impl RouteHandler for RoomHandler {
                 pg_conn.query_rows(
                     r#"
                     SELECT event_id, events.type, state_key, depth, sender, state_group,
-                        content, origin_server_ts,
+                        content, origin_server_ts, stream_ordering,
                         array(
                             SELECT prev_event_id FROM event_edges
                             WHERE is_state = false and event_id = events.event_id
@@ -105,11 +106,11 @@ impl RouteHandler for RoomHandler {
                     FROM events
                     LEFT JOIN state_events USING (event_id)
                     LEFT JOIN event_to_state_groups USING (event_id)
-                    WHERE events.room_id = $1 AND topological_ordering <= $2::bigint
-                    ORDER BY topological_ordering DESC
+                    WHERE events.room_id = $1 AND stream_ordering <= $2::bigint
+                    ORDER BY stream_ordering DESC
                     LIMIT $3::int
                     "#,
-                    &[&room_id, &max_depth, &page_size],
+                    &[&room_id, &max_stream, &page_size],
                     |row| RoomRow {
                         event_id: row.get(0),
                         etype: row.get(1),
@@ -120,22 +121,24 @@ impl RouteHandler for RoomHandler {
                         content: serde_json::from_str(&row.get::<_, String>(6))
                             .expect("content was not json"),
                         ts: row.get(7),
-                        edges: row.get(8),
+                        stream_ordering: row.get(8),
+                        edges: row.get(9),
                     }
                 ).expect("room sql query failed")
             }
             DatabaseConnection::Sqlite(_) => {
                 let mut events = conn.query(
                     r#"
-                    SELECT event_id, events.type, state_key, depth, sender, state_group, content, origin_server_ts
+                    SELECT event_id, events.type, state_key, depth, sender, state_group, content, origin_server_ts,
+                        stream_ordering
                     FROM events
                     LEFT JOIN state_events USING (event_id)
                     LEFT JOIN event_to_state_groups USING (event_id)
-                    WHERE events.room_id = $1 AND topological_ordering <= $2::bigint
-                    ORDER BY topological_ordering DESC
+                    WHERE events.room_id = $1 AND stream_ordering <= $2::bigint
+                    ORDER BY stream_ordering DESC
                     LIMIT $3::int
                     "#,
-                    &[&room_id, &max_depth, &page_size],
+                    &[&room_id, &max_stream, &page_size],
                     |row| RoomRow {
                         event_id: row.get(0),
                         etype: row.get(1),
@@ -146,6 +149,7 @@ impl RouteHandler for RoomHandler {
                         content: serde_json::from_str(&row.get::<String>(6))
                             .expect("content was not json"),
                         ts: row.get(7),
+                        stream_ordering: row.get(8),
                         edges: Vec::new(),
                     }
                 ).expect("room sql query failed");
