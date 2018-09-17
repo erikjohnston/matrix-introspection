@@ -104,7 +104,7 @@ impl RouteHandler for RoomHandler {
                             WHERE is_state = false and event_id = events.event_id
                         )
                     FROM events
-                    JOIN event_json USING (event_id)
+                    INNER JOIN event_json USING (event_id)
                     LEFT JOIN state_events USING (event_id)
                     LEFT JOIN event_to_state_groups USING (event_id)
                     WHERE events.room_id = $1 AND stream_ordering <= $2::bigint
