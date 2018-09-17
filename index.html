@@ -6,7 +6,7 @@
 
   <script type="text/javascript" src="https://cdnjs.cloudflare.com/ajax/libs/vis/4.17.0/vis.min.js"></script>
   <script type="text/javascript" src="https://code.jquery.com/jquery-3.1.1.min.js"></script>
-  <link href="https://cdnjs.cloudflare.com/ajax/libs/vis/4.17.0/vis.min.css" rel="stylesheet" type="text/css" />
+  <link href="https://cdnjs.cloudflare.com/ajax/libs/vis/4.20.1/vis.min.css" rel="stylesheet" type="text/css" />
 
   <style type="text/css">
     #mynetwork {
@@ -26,8 +26,8 @@
 <form id="main_form">
     <label for="room_id_input">Room ID:</label>
     <input id="room_id_input" name="room_id" type="text" size="30"/>
-    <label for="max_depth_input">Max depth:</label>
-    <input id="max_depth_input" name="max_depth" type="text" size="5"/>
+    <label for="max_stream_input">Max stream_ordering:</label>
+    <input id="max_stream_input" name="max_stream" type="text" size="5"/>
     <input type="submit"/>
 </form>
 
@@ -57,10 +57,10 @@
         params[decode(s[0])] = decode(s[1] || "");
     }
     const room_id = params['room_id'] || '!cURbafjkfsMDVwdRDQ:matrix.org';
-    let max_depth = params['max_depth'];
-    if (max_depth === undefined) { max_depth = ""; }
+    let max_stream = params['max_stream'];
+    if (max_stream === undefined) { max_stream = ""; }
     $('#room_id_input').val(room_id);
-    $('#max_depth_input').val(max_depth);
+    $('#max_stream_input').val(max_stream);
 
     // assign the given level to the node with the given event id, and walk the
     // tree down the edges to ensure that each parent has a higher level.
@@ -81,8 +81,8 @@
     }
 
     let q = `/room/${room_id}`;
-    if (max_depth != "") {
-        q += `?max_depth=${max_depth}`;
+    if (max_stream != "") {
+        q += `?max_stream=${max_stream}`;
     }
     $.get( q, function( data ) {
         var event_map = {}

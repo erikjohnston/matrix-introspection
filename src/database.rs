@@ -88,6 +88,7 @@ pub trait ToSql {
     fn as_sqlite(&self) -> &Sqlite3ToSql;
 }
 
+impl FromSql for i32 {}
 impl FromSql for i64 {}
 impl FromSql for String {}
 impl<T> FromSql for Option<T> where T: FromSql + Clone {}
