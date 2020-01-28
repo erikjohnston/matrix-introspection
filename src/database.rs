@@ -77,7 +77,7 @@ impl<'a> DbRow<'a> {
     pub fn  get<T: FromSql>(&mut self, idx: u8) -> T {
         match *self {
             DbRow::Postgres(ref mut row) => row.get(idx as usize),
-            DbRow::Sqlite(ref mut row) => row.get(idx as i32),
+            DbRow::Sqlite(ref mut row) => row.get(idx as usize),
         }
     }
 }
