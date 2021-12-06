@@ -38,9 +38,11 @@ struct RoomRow {
     sender: String,
     state_group: Option<i64>,
     json: serde_json::Value,
+    internal_metadata: serde_json::Value,
     ts: i64,
     edges: Vec<String>,
     stream_ordering: i32,
+    rejection_reason: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -97,8 +99,9 @@ impl RouteHandler for RoomHandler {
             DatabaseConnection::Postgres(_) => {
                 conn.query(
                     r#"
-                    SELECT event_id, events.type, state_key, depth, sender, state_group,
-                        json, origin_server_ts, stream_ordering,
+                    SELECT event_id, events.type, state_events.state_key, depth, sender, state_group,
+                        json, internal_metadata, origin_server_ts, stream_ordering,
+                        rejections.reason,
                         array(
                             SELECT prev_event_id FROM event_edges
                             WHERE is_state = false and event_id = events.event_id
@@ -107,6 +110,7 @@ impl RouteHandler for RoomHandler {
                     INNER JOIN event_json USING (event_id)
                     LEFT JOIN state_events USING (event_id)
                     LEFT JOIN event_to_state_groups USING (event_id)
+                    LEFT JOIN rejections USING (event_id)
                     WHERE events.room_id = $1 AND stream_ordering <= $2::bigint
                     ORDER BY stream_ordering DESC
                     LIMIT $3::int
@@ -118,12 +122,14 @@ impl RouteHandler for RoomHandler {
             DatabaseConnection::Sqlite(_) => {
                 let mut events = conn.query(
                     r#"
-                    SELECT event_id, events.type, state_key, depth, sender, state_group, json, origin_server_ts,
-                        stream_ordering
+                    SELECT event_id, events.type, state_events.state_key, depth, sender, state_group,
+                        json, internal_metadata, origin_server_ts, stream_ordering,
+                        rejections.reason
                     FROM events
                     JOIN event_json USING (event_id)
                     LEFT JOIN state_events USING (event_id)
                     LEFT JOIN event_to_state_groups USING (event_id)
+                    LEFT JOIN rejections USING (event_id)
                     WHERE events.room_id = $1 AND stream_ordering <= $2::bigint
                     ORDER BY stream_ordering DESC
                     LIMIT $3::int
@@ -171,7 +177,7 @@ impl RouteHandler for StateHandler {
                 SELECT prev_state_group FROM state_group_edges e, state s
                 WHERE s.state_group = e.state_group
             )
-            SELECT event_id, es.type, state_key, ej.json, e.depth
+            SELECT event_id, es.type, es.state_key, ej.json, e.depth
             FROM state_groups_state
             NATURAL JOIN (
                 SELECT type, state_key, max(state_group) as state_group FROM state_groups_state
@@ -200,7 +206,7 @@ impl RouteHandler for StateHandler {
 fn parse_event_row(row: &mut DbRow<'_>) -> RoomRow {
     // the postgres variant returns the event edges as an array
     let edges = match row {
-        DbRow::Postgres(ref mut pgrow) => pgrow.get(9),
+        DbRow::Postgres(ref mut pgrow) => pgrow.get(11),
         _ => Vec::new(),
     };
 
@@ -213,8 +219,11 @@ fn parse_event_row(row: &mut DbRow<'_>) -> RoomRow {
         state_group: row.get(5),
         json: serde_json::from_str(&row.get::<String>(6))
             .expect("json was not json"),
-        ts: row.get(7),
-        stream_ordering: row.get(8),
+        internal_metadata: serde_json::from_str(&row.get::<String>(7))
+            .expect("internal_metadata was not json"),
+        ts: row.get(8),
+        stream_ordering: row.get(9),
+        rejection_reason: row.get(10),
         edges: edges,
     };
 }
