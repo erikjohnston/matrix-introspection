@@ -25,7 +25,7 @@ use std::fs::File;
 use std::io;
 
 mod database;
-use database::{DatabaseConnection, DatabaseConnector, PostgresConnectionExt};
+use database::{DatabaseConnection, DatabaseConnector, DbRow};
 
 
 
@@ -94,8 +94,8 @@ impl RouteHandler for RoomHandler {
         let mut conn = self.connector.connect();
 
         let events = match conn {
-            DatabaseConnection::Postgres(ref mut pg_conn) => {
-                pg_conn.query_rows(
+            DatabaseConnection::Postgres(_) => {
+                conn.query(
                     r#"
                     SELECT event_id, events.type, state_key, depth, sender, state_group,
                         json, origin_server_ts, stream_ordering,
@@ -112,19 +112,7 @@ impl RouteHandler for RoomHandler {
                     LIMIT $3::int
                     "#,
                     &[&room_id, &max_stream, &page_size],
-                    |row| RoomRow {
-                        event_id: row.get(0),
-                        etype: row.get(1),
-                        state_key: row.get(2),
-                        depth: row.get(3),
-                        sender: row.get(4),
-                        state_group: row.get(5),
-                        json: serde_json::from_str(&row.get::<_, String>(6))
-                            .expect("json was not json"),
-                        ts: row.get(7),
-                        stream_ordering: row.get(8),
-                        edges: row.get(9),
-                    }
+                    |row| parse_event_row(row),
                 ).expect("room sql query failed")
             }
             DatabaseConnection::Sqlite(_) => {
@@ -141,19 +129,7 @@ impl RouteHandler for RoomHandler {
                     LIMIT $3::int
                     "#,
                     &[&room_id, &max_stream, &page_size],
-                    |row| RoomRow {
-                        event_id: row.get(0),
-                        etype: row.get(1),
-                        state_key: row.get(2),
-                        depth: row.get(3),
-                        sender: row.get(4),
-                        state_group: row.get(5),
-                        json: serde_json::from_str(&row.get::<String>(6))
-                            .expect("json was not json"),
-                        ts: row.get(7),
-                        stream_ordering: row.get(8),
-                        edges: Vec::new(),
-                    }
+                    |row| parse_event_row(row),
                 ).expect("room sql query failed");
 
                 for event in &mut events {
@@ -220,6 +196,29 @@ impl RouteHandler for StateHandler {
         write_200_json(res, &state);
     }
 }
+
+fn parse_event_row(row: &mut DbRow<'_>) -> RoomRow {
+    // the postgres variant returns the event edges as an array
+    let edges = match row {
+        DbRow::Postgres(ref mut pgrow) => pgrow.get(9),
+        _ => Vec::new(),
+    };
+
+    return RoomRow {
+        event_id: row.get(0),
+        etype: row.get(1),
+        state_key: row.get(2),
+        depth: row.get(3),
+        sender: row.get(4),
+        state_group: row.get(5),
+        json: serde_json::from_str(&row.get::<String>(6))
+            .expect("json was not json"),
+        ts: row.get(7),
+        stream_ordering: row.get(8),
+        edges: edges,
+    };
+}
+
 
 fn content_from_json(s: String) -> serde_json::Value {
     let json: serde_json::Value = serde_json::from_str(&s).expect("content was not json");
