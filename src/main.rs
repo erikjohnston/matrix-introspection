@@ -227,12 +227,12 @@ fn content_from_json(s: String) -> serde_json::Value {
 }
 
 fn index(_: Params, _: Request, res: Response) {
-    serve_static("index.html", res);
+    serve_static("static/index.html", res);
 }
 
 fn asset(params: Params, _: Request, res: Response) {
     let asset = params.find("asset").expect("asset not in params");
-    serve_static(&format!("assets/{}", asset), res);
+    serve_static(&format!("static/assets/{}", asset), res);
 }
 
 fn serve_static(filename: &str, mut res: Response) {

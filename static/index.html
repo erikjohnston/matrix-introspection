@@ -1,0 +1,51 @@
+
+<!doctype html>
+<html>
+<head>
+  <title>Matrix Room Explorer</title>
+
+  <script type="text/javascript" src="https://cdnjs.cloudflare.com/ajax/libs/vis/4.17.0/vis.min.js"></script>
+  <script type="text/javascript" src="https://code.jquery.com/jquery-3.1.1.min.js"></script>
+  <link href="https://cdnjs.cloudflare.com/ajax/libs/vis/4.20.1/vis.min.css" rel="stylesheet" type="text/css" />
+
+  <style type="text/css">
+    #mynetwork {
+      width: 800px;
+      height: 600px;
+      border: 1px solid lightgray;
+    }
+
+    #rhs {
+      margin: 50px;
+      float: right;
+    }
+  </style>
+</head>
+<body>
+
+<form id="main_form">
+    <label for="room_id_input">Room ID:</label>
+    <input id="room_id_input" name="room_id" type="text" size="30"/>
+    <label for="max_stream_input">Max stream_ordering:</label>
+    <input id="max_stream_input" name="max_stream" type="text" size="5"/>
+    <input type="submit"/>
+</form>
+
+<div id="container">
+    <div id="rhs">
+        <form id="event_id_form">
+            <input id="event_id_input" type="text" placeholder="event_id"/>
+            <input type="submit"/>
+        </form>
+        <div id="mynetwork"></div>
+    </div>
+    <div id="info_box">
+        <div id="info"></div>
+        <div id="state"></div>
+    </div>
+</div>
+
+<script type="text/javascript" src="assets/matrix-introspection.js"></script>
+
+</body>
+</html>
