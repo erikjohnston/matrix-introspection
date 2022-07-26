@@ -41,7 +41,7 @@ struct RoomRow {
     internal_metadata: serde_json::Value,
     ts: i64,
     edges: Vec<String>,
-    stream_ordering: i32,
+    stream_ordering: i64,
     rejection_reason: Option<String>,
 }
 
